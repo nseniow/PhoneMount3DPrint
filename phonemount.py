@@ -113,7 +113,7 @@ bolt_spacing = 25
 bolt_z = wall_z_bottom + wall_total_height * 0.85
 
 inner_back_y = -inner_depth / 2   # inner face, facing the phone cavity
-bolt_positions = [-bolt_spacing, 0, bolt_spacing]
+bolt_positions = [-bolt_spacing, bolt_spacing]
 
 bolt_cutters = []
 for x in bolt_positions:
