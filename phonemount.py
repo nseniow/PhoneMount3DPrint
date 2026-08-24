@@ -47,8 +47,7 @@ bottom_rect_cutter = (
 
 base_with_slots = base.cut(oval_cutter).cut(rect_cutter).cut(bottom_rect_cutter)
 
-# Wall around the phone: expand footprint by 3mm on all sides, 3mm thick,
-# running the full height (base bottom up to 90mm above the top)
+# Wall around the phone
 wall_expand = 3
 wall_thickness = 3
 wall_height_above_top = 90
@@ -71,10 +70,10 @@ wall = (
 
 phone_mount = base_with_slots.union(wall)
 
-# Window cut into the front wall so the screen is visible
-window_side_margin = 5     # left/right margin, mm
-window_top_margin = 0      # no margin - window goes all the way to the top
-window_bottom_margin = 30  # margin from the very bottom of the wall, mm
+# Window cut into the front wall
+window_side_margin = 5
+window_top_margin = 0
+window_bottom_margin = 40
 
 window_width = outer_length - 2 * window_side_margin
 window_height = wall_total_height - window_top_margin - window_bottom_margin
@@ -90,6 +89,29 @@ window_cutter = (
     .extrude(wall_thickness * 2, both=True)
 )
 
-result = phone_mount.cut(window_cutter)
+phone_mount = phone_mount.cut(window_cutter)
+
+# Pegboard pegs — on the true back face, opposite the window
+peg_diameter = 7.25     # updated thickness
+peg_length = 25         # updated length
+peg_spacing = 25
+peg_z = wall_z_bottom + wall_total_height * 0.85   # moved up to ~85%
+
+back_y = -outer_depth / 2
+peg_positions = [-peg_spacing, 0, peg_spacing]
+
+peg_solids = [
+    cq.Solid.makeCylinder(
+        peg_diameter / 2,
+        peg_length,
+        cq.Vector(x, back_y, peg_z),
+        cq.Vector(0, -1, 0)
+    )
+    for x in peg_positions
+]
+
+pegs = cq.Workplane("XY").newObject(peg_solids)
+
+result = phone_mount.union(pegs)
 
 cq.exporters.export(result, "phonemount.stl")
