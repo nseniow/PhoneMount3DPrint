@@ -1,9 +1,10 @@
-import math
 import cadquery as cq
+from cq_warehouse.thread import IsoThread
+from cq_warehouse.fastener import HexNut
 
 # Base block dimensions (mm)
-base_length = 80   # increased for extra buffer around the phone width
-base_depth = 14
+base_length = 78
+base_depth = 12.75
 base_height = 25
 
 base = (
@@ -72,7 +73,7 @@ wall = (
 phone_mount = base_with_slots.union(wall)
 
 # Window cut into the front wall
-window_width = 67          # fixed width now, narrower than before
+window_width = 67
 window_top_margin = 0
 window_bottom_margin = 30
 
@@ -91,11 +92,10 @@ window_cutter = (
 
 phone_mount = phone_mount.cut(window_cutter)
 
-# Pegboard hooks — smooth L-shaped pipe: straight in, rounded bend, straight up
-peg_diameter = 7.25
-peg_straight_length = 10
-peg_up_length = 10
-bend_radius = 4
+# --- Threaded pegs (replacing the hook design) ---
+thread_major_diameter = 6    # M6 - comfortably under the 7.5mm pegboard hole
+thread_pitch = 1             # standard M6 coarse pitch
+peg_length = 15               # longer, to clear pegboard thickness + a nut + finger room
 peg_spacing = 25
 peg_z = wall_z_bottom + wall_total_height * 0.85
 
@@ -103,34 +103,24 @@ back_y = -outer_depth / 2
 peg_positions = [-peg_spacing, 0, peg_spacing]
 
 
-def make_hook_peg(x, back_y, peg_z, straight_len, up_len, radius, r):
-    P0 = (back_y, peg_z)
-    P1 = (back_y - (straight_len - r), peg_z)
-    O = (back_y - (straight_len - r), peg_z + r)
-    P2 = (back_y - straight_len, peg_z + r)
-    Mu = O[0] + r * math.cos(math.radians(225))
-    Mv = O[1] + r * math.sin(math.radians(225))
-    M = (Mu, Mv)
-    P3 = (P2[0], P2[1] + (up_len - r))
-
-    path = (
-        cq.Workplane("YZ", origin=(x, 0, 0))
-        .moveTo(*P0)
-        .lineTo(*P1)
-        .threePointArc(M, P2)
-        .lineTo(*P3)
+def make_threaded_peg(x, back_y, peg_z, length, major_diameter, pitch):
+    thread = IsoThread(
+        major_diameter=major_diameter,
+        pitch=pitch,
+        length=length,
+        external=True,
+        end_finishes=("fade", "fade"),
     )
-
-    profile = (
-        cq.Workplane("XZ", origin=(x, back_y, peg_z))
-        .circle(radius / 2)
-    )
-
-    return profile.sweep(path)
+    core = cq.Workplane("XY").circle(thread.min_radius).extrude(length)
+    rod = core.union(thread.cq_object)
+    # rod is built along local +Z from 0 to length; rotate so it points -Y (outward)
+    rod = rod.rotate((0, 0, 0), (1, 0, 0), 90)
+    rod = rod.translate((x, back_y, peg_z))
+    return rod
 
 
 peg_shapes = [
-    make_hook_peg(x, back_y, peg_z, peg_straight_length, peg_up_length, peg_diameter, bend_radius)
+    make_threaded_peg(x, back_y, peg_z, peg_length, thread_major_diameter, thread_pitch)
     for x in peg_positions
 ]
 
@@ -141,3 +131,13 @@ for shape in peg_shapes[1:]:
 result = phone_mount.union(pegs)
 
 cq.exporters.export(result, "phonemount.stl")
+
+# --- Matching nuts, exported separately so you can print 3 loose nuts ---
+nut = HexNut(size="M6-1", fastener_type="iso4032", simple=False)
+
+nut_spacing = 15   # lay the 3 nuts out side by side, flat on the print bed
+nuts = cq.Workplane("XY")
+for i, offset in enumerate([-nut_spacing, 0, nut_spacing]):
+    nuts = nuts.union(nut.cq_object.translate((offset, 0, 0)))
+
+cq.exporters.export(nuts, "nuts.stl")
