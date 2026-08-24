@@ -1,6 +1,4 @@
 import cadquery as cq
-from cq_warehouse.thread import IsoThread
-from cq_warehouse.fastener import HexNut
 
 # Base block dimensions (mm)
 base_length = 78
@@ -92,52 +90,52 @@ window_cutter = (
 
 phone_mount = phone_mount.cut(window_cutter)
 
-# --- Threaded pegs (replacing the hook design) ---
-thread_major_diameter = 6    # M6 - comfortably under the 7.5mm pegboard hole
-thread_pitch = 1             # standard M6 coarse pitch
-peg_length = 15               # longer, to clear pegboard thickness + a nut + finger room
-peg_spacing = 25
-peg_z = wall_z_bottom + wall_total_height * 0.85
+# --- Thicken the back wall to fit bolt heads ---
+back_extra_thickness = 7          # added onto the existing 3mm wall_thickness
+total_back_thickness = wall_thickness + back_extra_thickness   # 10mm total
 
-back_y = -outer_depth / 2
-peg_positions = [-peg_spacing, 0, peg_spacing]
+back_wall_extension = (
+    cq.Workplane("XY")
+    .workplane(offset=wall_z_bottom)
+    .center(0, -(outer_depth / 2 + back_extra_thickness / 2))
+    .rect(outer_length, back_extra_thickness)
+    .extrude(wall_total_height)
+)
 
+phone_mount = phone_mount.union(back_wall_extension)
 
-def make_threaded_peg(x, back_y, peg_z, length, major_diameter, pitch):
-    thread = IsoThread(
-        major_diameter=major_diameter,
-        pitch=pitch,
-        length=length,
-        external=True,
-        end_finishes=("fade", "fade"),
+# --- Bolt holes: 6mm through-hole + 11.5mm counterbore for the head ---
+bolt_hole_diameter = 6
+bolt_head_diameter = 11.5
+bolt_head_depth = 3.5
+
+bolt_spacing = 25
+bolt_z = wall_z_bottom + wall_total_height * 0.85
+
+inner_back_y = -inner_depth / 2   # inner face, facing the phone cavity
+bolt_positions = [-bolt_spacing, 0, bolt_spacing]
+
+bolt_cutters = []
+for x in bolt_positions:
+    # 6mm hole, all the way through the thickened back wall
+    through_hole = cq.Solid.makeCylinder(
+        bolt_hole_diameter / 2,
+        total_back_thickness,
+        cq.Vector(x, inner_back_y, bolt_z),
+        cq.Vector(0, -1, 0)
     )
-    core = cq.Workplane("XY").circle(thread.min_radius).extrude(length)
-    rod = core.union(thread.cq_object)
-    # rod is built along local +Z from 0 to length; rotate so it points -Y (outward)
-    rod = rod.rotate((0, 0, 0), (1, 0, 0), 90)
-    rod = rod.translate((x, back_y, peg_z))
-    return rod
+    # 11.5mm counterbore, recessed into the inner (phone-facing) side only
+    counterbore = cq.Solid.makeCylinder(
+        bolt_head_diameter / 2,
+        bolt_head_depth,
+        cq.Vector(x, inner_back_y, bolt_z),
+        cq.Vector(0, -1, 0)
+    )
+    bolt_cutters.append(through_hole)
+    bolt_cutters.append(counterbore)
 
+bolt_cutter_shape = cq.Workplane("XY").newObject(bolt_cutters)
 
-peg_shapes = [
-    make_threaded_peg(x, back_y, peg_z, peg_length, thread_major_diameter, thread_pitch)
-    for x in peg_positions
-]
-
-pegs = peg_shapes[0]
-for shape in peg_shapes[1:]:
-    pegs = pegs.union(shape)
-
-result = phone_mount.union(pegs)
+result = phone_mount.cut(bolt_cutter_shape)
 
 cq.exporters.export(result, "phonemount.stl")
-
-# --- Matching nuts, exported separately so you can print 3 loose nuts ---
-nut = HexNut(size="M6-1", fastener_type="iso4032", simple=False)
-
-nut_spacing = 15   # lay the 3 nuts out side by side, flat on the print bed
-nuts = cq.Workplane("XY")
-for i, offset in enumerate([-nut_spacing, 0, nut_spacing]):
-    nuts = nuts.union(nut.cq_object.translate((offset, 0, 0)))
-
-cq.exporters.export(nuts, "nuts.stl")
