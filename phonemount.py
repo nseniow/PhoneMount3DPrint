@@ -2,7 +2,7 @@ import math
 import cadquery as cq
 
 # Base block dimensions (mm)
-base_length = 78
+base_length = 80   # increased for extra buffer around the phone width
 base_depth = 14
 base_height = 25
 
@@ -72,11 +72,10 @@ wall = (
 phone_mount = base_with_slots.union(wall)
 
 # Window cut into the front wall
-window_side_margin = 5
+window_width = 67          # fixed width now, narrower than before
 window_top_margin = 0
 window_bottom_margin = 30
 
-window_width = outer_length - 2 * window_side_margin
 window_height = wall_total_height - window_top_margin - window_bottom_margin
 window_center_z = wall_z_bottom + window_bottom_margin + window_height / 2
 
@@ -94,9 +93,9 @@ phone_mount = phone_mount.cut(window_cutter)
 
 # Pegboard hooks — smooth L-shaped pipe: straight in, rounded bend, straight up
 peg_diameter = 7.25
-peg_straight_length = 10   # total run length into the pegboard, before the tip goes up
-peg_up_length = 10         # total upward length, measured from the corner
-bend_radius = 4            # radius of the smooth bend (must be < both straight/up lengths)
+peg_straight_length = 10
+peg_up_length = 10
+bend_radius = 4
 peg_spacing = 25
 peg_z = wall_z_bottom + wall_total_height * 0.85
 
@@ -105,16 +104,14 @@ peg_positions = [-peg_spacing, 0, peg_spacing]
 
 
 def make_hook_peg(x, back_y, peg_z, straight_len, up_len, radius, r):
-    # All points are in local (u, v) = (Y, Z) coordinates on the x = const plane
-    P0 = (back_y, peg_z)                                   # attaches to back wall
-    P1 = (back_y - (straight_len - r), peg_z)               # where the bend starts
-    O = (back_y - (straight_len - r), peg_z + r)            # arc center
-    P2 = (back_y - straight_len, peg_z + r)                 # where the bend ends
-    # Midpoint of the arc (bisecting the 90 degree clockwise turn)
+    P0 = (back_y, peg_z)
+    P1 = (back_y - (straight_len - r), peg_z)
+    O = (back_y - (straight_len - r), peg_z + r)
+    P2 = (back_y - straight_len, peg_z + r)
     Mu = O[0] + r * math.cos(math.radians(225))
     Mv = O[1] + r * math.sin(math.radians(225))
     M = (Mu, Mv)
-    P3 = (P2[0], P2[1] + (up_len - r))                       # peg tip
+    P3 = (P2[0], P2[1] + (up_len - r))
 
     path = (
         cq.Workplane("YZ", origin=(x, 0, 0))
@@ -124,7 +121,6 @@ def make_hook_peg(x, back_y, peg_z, straight_len, up_len, radius, r):
         .lineTo(*P3)
     )
 
-    # Profile circle perpendicular to the path's starting direction (-Y)
     profile = (
         cq.Workplane("XZ", origin=(x, back_y, peg_z))
         .circle(radius / 2)
