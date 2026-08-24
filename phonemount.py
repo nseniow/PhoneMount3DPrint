@@ -48,7 +48,7 @@ bottom_rect_cutter = (
 base_with_slots = base.cut(oval_cutter).cut(rect_cutter).cut(bottom_rect_cutter)
 
 # Wall around the phone: expand footprint by 3mm on all sides, 3mm thick,
-# now running the full height (base bottom up to 90mm above the top)
+# running the full height (base bottom up to 90mm above the top)
 wall_expand = 3
 wall_thickness = 3
 wall_height_above_top = 90
@@ -59,15 +59,37 @@ inner_length = outer_length - 2 * wall_thickness
 inner_depth = outer_depth - 2 * wall_thickness
 
 wall_total_height = base_height + wall_height_above_top
+wall_z_bottom = -base_height / 2
 
 wall = (
     cq.Workplane("XY")
-    .workplane(offset=-base_height / 2)   # start at the bottom of the base
+    .workplane(offset=wall_z_bottom)
     .rect(outer_length, outer_depth)
     .rect(inner_length, inner_depth)
     .extrude(wall_total_height)
 )
 
-result = base_with_slots.union(wall)
+phone_mount = base_with_slots.union(wall)
+
+# Window cut into the front wall so the screen is visible
+window_side_margin = 5     # left/right margin, mm
+window_top_margin = 0      # no margin - window goes all the way to the top
+window_bottom_margin = 30  # margin from the very bottom of the wall, mm
+
+window_width = outer_length - 2 * window_side_margin
+window_height = wall_total_height - window_top_margin - window_bottom_margin
+window_center_z = wall_z_bottom + window_bottom_margin + window_height / 2
+
+front_y = -outer_depth / 2
+
+window_cutter = (
+    cq.Workplane("XZ")
+    .workplane(offset=front_y)
+    .center(0, window_center_z)
+    .rect(window_width, window_height)
+    .extrude(wall_thickness * 2, both=True)
+)
+
+result = phone_mount.cut(window_cutter)
 
 cq.exporters.export(result, "phonemount.stl")
