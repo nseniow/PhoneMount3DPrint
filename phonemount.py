@@ -1,3 +1,4 @@
+import math
 import cadquery as cq
 
 # Base block dimensions (mm)
@@ -47,10 +48,12 @@ bottom_rect_cutter = (
 
 base_with_slots = base.cut(oval_cutter).cut(rect_cutter).cut(bottom_rect_cutter)
 
-# Wall around the phone
+# Wall around the phone — ONLY the side walls (X-extreme faces) taper outward;
+# front/back stay flat since depth (Y) is identical at the top and bottom profile
 wall_expand = 3
 wall_thickness = 3
-wall_height_above_top = 90
+wall_height_above_top = 30
+wall_side_taper_angle = 10   # degrees; tune this down if it's too aggressive
 
 outer_length = base_length + 2 * wall_expand
 outer_depth = base_depth + 2 * wall_expand
@@ -60,13 +63,30 @@ inner_depth = outer_depth - 2 * wall_thickness
 wall_total_height = base_height + wall_height_above_top
 wall_z_bottom = -base_height / 2
 
-wall = (
-    cq.Workplane("XY")
-    .workplane(offset=wall_z_bottom)
-    .rect(outer_length, outer_depth)
-    .rect(inner_length, inner_depth)
-    .extrude(wall_total_height)
-)
+
+def loft_side_tapered(length_bottom, depth, height_total, z_bottom, taper_deg):
+    half_delta = height_total * math.tan(math.radians(taper_deg))
+    length_top = length_bottom + 2 * half_delta
+    return (
+        cq.Workplane("XY")
+        .workplane(offset=z_bottom)
+        .rect(length_bottom, depth)
+        .workplane(offset=height_total)
+        .rect(length_top, depth)
+        .loft(ruled=True)
+    )
+
+
+def width_at_z(length_bottom, height_total, z_bottom, taper_deg, z):
+    half_delta_total = height_total * math.tan(math.radians(taper_deg))
+    frac = (z - z_bottom) / height_total
+    return length_bottom + 2 * half_delta_total * frac
+
+
+wall_outer_solid = loft_side_tapered(outer_length, outer_depth, wall_total_height, wall_z_bottom, wall_side_taper_angle)
+wall_inner_solid = loft_side_tapered(inner_length, inner_depth, wall_total_height, wall_z_bottom, wall_side_taper_angle)
+
+wall = wall_outer_solid.cut(wall_inner_solid)
 
 phone_mount = base_with_slots.union(wall)
 
@@ -90,21 +110,46 @@ window_cutter = (
 
 phone_mount = phone_mount.cut(window_cutter)
 
-# --- Thicken the back wall to fit bolt heads ---
-back_extra_thickness = 3          # added onto the existing 3mm wall_thickness
-total_back_thickness = wall_thickness + back_extra_thickness   # 10mm total
+# --- Thicken the back wall to fit bolt heads (moved BEFORE the bottom
+# cutouts, so those cutouts also cut through this added material) ---
+back_extra_thickness = 3
+total_back_thickness = wall_thickness + back_extra_thickness
 
 back_wall_extension = (
-    cq.Workplane("XY")
-    .workplane(offset=wall_z_bottom)
-    .center(0, -(outer_depth / 2 + back_extra_thickness / 2))
-    .rect(outer_length, back_extra_thickness)
-    .extrude(wall_total_height)
+    loft_side_tapered(outer_length, back_extra_thickness, wall_total_height, wall_z_bottom, wall_side_taper_angle)
+    .translate((0, -(outer_depth / 2 + back_extra_thickness / 2), 0))
 )
 
 phone_mount = phone_mount.union(back_wall_extension)
 
-# --- Bolt holes: 6mm through-hole + 11.5mm counterbore for the head ---
+# --- Two rectangular cutouts in the bottom band — now cut AFTER the back
+# wall extension exists, so they punch through everything including it ---
+center_keep_width = 25   # solid strip kept in the middle for the charger
+
+cutout_top_z = wall_z_bottom + 20
+cutout_bottom_z = wall_z_bottom
+cutout_height = cutout_top_z - cutout_bottom_z
+cutout_center_z = cutout_bottom_z + cutout_height / 2
+
+width_at_cutout_top = width_at_z(outer_length, wall_total_height, wall_z_bottom, wall_side_taper_angle, cutout_top_z)
+cutout_width = (width_at_cutout_top - center_keep_width) / 2
+
+left_cutout_x = -(center_keep_width / 2 + cutout_width / 2)
+right_cutout_x = (center_keep_width / 2 + cutout_width / 2)
+
+cut_depth = outer_depth + total_back_thickness + 40   # generous — clears the wall, base, and back extension
+
+for x_center in (left_cutout_x, right_cutout_x):
+    cutter = (
+        cq.Workplane("XZ")
+        .workplane(offset=front_y)
+        .center(x_center, cutout_center_z)
+        .rect(cutout_width, cutout_height)
+        .extrude(cut_depth, both=True)
+    )
+    phone_mount = phone_mount.cut(cutter)
+
+# --- Bolt holes ---
 bolt_hole_diameter = 6
 bolt_head_diameter = 11.5
 bolt_head_depth = 3.5
@@ -112,19 +157,17 @@ bolt_head_depth = 3.5
 bolt_spacing = 25
 bolt_z = wall_z_bottom + wall_total_height * 0.85
 
-inner_back_y = -inner_depth / 2   # inner face, facing the phone cavity
+inner_back_y = -inner_depth / 2
 bolt_positions = [-bolt_spacing, bolt_spacing]
 
 bolt_cutters = []
 for x in bolt_positions:
-    # 6mm hole, all the way through the thickened back wall
     through_hole = cq.Solid.makeCylinder(
         bolt_hole_diameter / 2,
         total_back_thickness,
         cq.Vector(x, inner_back_y, bolt_z),
         cq.Vector(0, -1, 0)
     )
-    # 11.5mm counterbore, recessed into the inner (phone-facing) side only
     counterbore = cq.Solid.makeCylinder(
         bolt_head_diameter / 2,
         bolt_head_depth,
