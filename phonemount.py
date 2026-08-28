@@ -49,7 +49,12 @@ bottom_rect_cutter = (
 base_with_slots = base.cut(oval_cutter).cut(rect_cutter).cut(bottom_rect_cutter)
 
 # Wall around the phone — ONLY the side walls (X-extreme faces) taper outward;
-# front/back stay flat since depth (Y) is identical at the top and bottom profile
+# front/back stay flat since depth (Y) is identical at the top and bottom profile.
+#
+# The wall is now FLUSH (vertical, untapered) for the entire height of the
+# base block, so its inner surface sits exactly on the base's side edges
+# the whole way up. It only starts flaring outward once it rises above the
+# top of the base (i.e. above where the phone actually sits).
 wall_expand = 3
 wall_thickness = 3
 wall_height_above_top = 30
@@ -63,28 +68,47 @@ inner_depth = outer_depth - 2 * wall_thickness
 wall_total_height = base_height + wall_height_above_top
 wall_z_bottom = -base_height / 2
 
+# Height over which the side walls stay flush/vertical (matches the base
+# exactly) before the taper begins.
+wall_flush_height = base_height
+# Height over which the side walls taper outward, above the base.
+wall_taper_height = wall_height_above_top
 
-def loft_side_tapered(length_bottom, depth, height_total, z_bottom, taper_deg):
-    half_delta = height_total * math.tan(math.radians(taper_deg))
+
+def loft_side_flush_then_tapered(length_bottom, depth, flush_height, taper_height, z_bottom, taper_deg):
+    """Rectangular profile that stays constant width for `flush_height`
+    (so it sits flush against the base's straight sides), then tapers
+    outward over `taper_height` above that."""
+    half_delta = taper_height * math.tan(math.radians(taper_deg))
     length_top = length_bottom + 2 * half_delta
     return (
         cq.Workplane("XY")
         .workplane(offset=z_bottom)
         .rect(length_bottom, depth)
-        .workplane(offset=height_total)
+        .workplane(offset=flush_height)
+        .rect(length_bottom, depth)
+        .workplane(offset=taper_height)
         .rect(length_top, depth)
         .loft(ruled=True)
     )
 
 
-def width_at_z(length_bottom, height_total, z_bottom, taper_deg, z):
-    half_delta_total = height_total * math.tan(math.radians(taper_deg))
-    frac = (z - z_bottom) / height_total
+def width_at_z(length_bottom, flush_height, taper_height, z_bottom, taper_deg, z):
+    """Width of the tapered/flush profile at a given absolute z height."""
+    flush_top_z = z_bottom + flush_height
+    if z <= flush_top_z:
+        return length_bottom
+    half_delta_total = taper_height * math.tan(math.radians(taper_deg))
+    frac = (z - flush_top_z) / taper_height
     return length_bottom + 2 * half_delta_total * frac
 
 
-wall_outer_solid = loft_side_tapered(outer_length, outer_depth, wall_total_height, wall_z_bottom, wall_side_taper_angle)
-wall_inner_solid = loft_side_tapered(inner_length, inner_depth, wall_total_height, wall_z_bottom, wall_side_taper_angle)
+wall_outer_solid = loft_side_flush_then_tapered(
+    outer_length, outer_depth, wall_flush_height, wall_taper_height, wall_z_bottom, wall_side_taper_angle
+)
+wall_inner_solid = loft_side_flush_then_tapered(
+    inner_length, inner_depth, wall_flush_height, wall_taper_height, wall_z_bottom, wall_side_taper_angle
+)
 
 wall = wall_outer_solid.cut(wall_inner_solid)
 
@@ -116,7 +140,9 @@ back_extra_thickness = 3
 total_back_thickness = wall_thickness + back_extra_thickness
 
 back_wall_extension = (
-    loft_side_tapered(outer_length, back_extra_thickness, wall_total_height, wall_z_bottom, wall_side_taper_angle)
+    loft_side_flush_then_tapered(
+        outer_length, back_extra_thickness, wall_flush_height, wall_taper_height, wall_z_bottom, wall_side_taper_angle
+    )
     .translate((0, -(outer_depth / 2 + back_extra_thickness / 2), 0))
 )
 
@@ -131,7 +157,9 @@ cutout_bottom_z = wall_z_bottom
 cutout_height = cutout_top_z - cutout_bottom_z
 cutout_center_z = cutout_bottom_z + cutout_height / 2
 
-width_at_cutout_top = width_at_z(outer_length, wall_total_height, wall_z_bottom, wall_side_taper_angle, cutout_top_z)
+width_at_cutout_top = width_at_z(
+    outer_length, wall_flush_height, wall_taper_height, wall_z_bottom, wall_side_taper_angle, cutout_top_z
+)
 cutout_width = (width_at_cutout_top - center_keep_width) / 2
 
 left_cutout_x = -(center_keep_width / 2 + cutout_width / 2)
