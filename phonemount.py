@@ -136,7 +136,7 @@ phone_mount = phone_mount.cut(window_cutter)
 
 # --- Thicken the back wall to fit bolt heads (moved BEFORE the bottom
 # cutouts, so those cutouts also cut through this added material) ---
-back_extra_thickness = 3
+back_extra_thickness = 4
 total_back_thickness = wall_thickness + back_extra_thickness
 
 back_wall_extension = (
